@@ -20,6 +20,9 @@ public struct SwiftOutdated: AsyncParsableCommand {
     @Flag(name: .long, help: "Output only packages with major version updates")
     var onlyMajor: Bool = false
 
+    @Flag(name: .long, help: "Ignore transitive dependencies (dependencies of your direct dependencies)")
+    var ignoreTransitive: Bool = false
+
     @Flag(name: .short, help: "Verbose output.")
     var verbose: Bool = false
 
@@ -45,8 +48,25 @@ public struct SwiftOutdated: AsyncParsableCommand {
     public func run() async throws {
         setupLogging()
         let pins = try SwiftPackage.currentPackagePins(in: Folder(path: path))
-        let packages = await SwiftPackage.collectVersions(for: pins, ignoringPrerelease: ignorePrerelease, onlyMajorUpdates: onlyMajor)
+        
+        // Filter out transitive dependencies if requested
+        let filteredPins = ignoreTransitive ? try filterDirectDependencies(pins: pins) : pins
+        
+        let packages = await SwiftPackage.collectVersions(for: filteredPins, ignoringPrerelease: ignorePrerelease, onlyMajorUpdates: onlyMajor)
         packages.output(format: isRunningInXcode ? .xcode : format.libFormat)
+    }
+    
+    private func filterDirectDependencies(pins: [SwiftPackage]) throws -> [SwiftPackage] {
+        // Read the Package.swift file to get direct dependencies
+        guard let directDeps = try SwiftPackage.readDirectDependencies(in: Folder(path: path)) else {
+            log.warning("Could not read direct dependencies from Package.swift, showing all dependencies")
+            return pins
+        }
+        
+        // Filter the pins to only include direct dependencies
+        return pins.filter { pin in
+            directDeps.contains { $0.lowercased() == pin.package.lowercased() }
+        }
     }
 
     private var isRunningInXcode: Bool {

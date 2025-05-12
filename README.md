@@ -40,6 +40,14 @@ $ swift outdated
 
 This lists all your outdated dependencies, the currently resolved version and the latest version available in their upstream repository.
 
+You can use the `--ignore-transitive` flag to show only your direct dependencies and ignore dependencies of your dependencies:
+
+```
+$ swift outdated --ignore-transitive
+```
+
+This is particularly useful in Xcode Run Script Phases where you might only want to see updates for the dependencies you've explicitly declared.
+
 ### Library
 
 This packages also exposes a library target called `Outdated`. Use this if you want to integrate the functionality into your project.
@@ -50,7 +58,10 @@ Here's a basic usage example.
 import Outdated
 
 let pins = try SwiftPackage.currentPackagePins(in: .current)
-let packages = await SwiftPackage.collectVersions(for: pins, ignoringPrerelease: true)
+// You can filter out transitive dependencies
+// let directDeps = try SwiftPackage.readDirectDependencies(in: .current)
+// let filteredPins = pins.filter { pin in directDeps?.contains { $0.lowercased() == pin.package.lowercased() } ?? false }
+let packages = await SwiftPackage.collectVersions(for: pins, ignoringPrerelease: true, onlyMajorUpdates: false)
 packages.output(format: .markdown)
 ```
 

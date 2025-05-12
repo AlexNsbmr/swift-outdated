@@ -119,6 +119,81 @@ extension SwiftPackage {
             return []
         }
     }
+    
+    public static func readDirectDependencies(in folder: Folder) throws -> [String]? {
+        guard let packageSwiftFile = try? folder.file(at: "Package.swift") else {
+            log.warning("Package.swift file not found")
+            return nil
+        }
+        
+        do {
+            let packageContent = try packageSwiftFile.readAsString()
+            
+            // Extract dependencies section
+            guard let dependenciesSection = extractDependenciesSection(from: packageContent) else {
+                log.warning("Could not find dependencies section in Package.swift")
+                return nil
+            }
+            
+            // Extract package names from URLs
+            let directDependencies = extractPackageNames(from: dependenciesSection)
+            log.info("Found \(directDependencies.count) direct dependencies in Package.swift")
+            return directDependencies
+        } catch {
+            log.error("Failed to read Package.swift: \(error)")
+            return nil
+        }
+    }
+    
+    private static func extractDependenciesSection(from packageContent: String) -> String? {
+        let pattern = #"dependencies:\s*\[([\s\S]*?)\],"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return nil
+        }
+        
+        let nsString = packageContent as NSString
+        let matches = regex.matches(in: packageContent, options: [], range: NSRange(location: 0, length: nsString.length))
+        
+        guard let match = matches.first,
+              match.numberOfRanges > 1,
+              let range = Range(match.range(at: 1), in: packageContent) else {
+            return nil
+        }
+        
+        return String(packageContent[range])
+    }
+    
+    private static func extractPackageNames(from dependenciesSection: String) -> [String] {
+        // Match URLs like: .package(url: "https://github.com/apple/swift-log.git", from: "1.5.2"),
+        let pattern = #"\.package\s*\(\s*url:\s*"([^"]+)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
+            return []
+        }
+        
+        let nsString = dependenciesSection as NSString
+        let matches = regex.matches(in: dependenciesSection, options: [], range: NSRange(location: 0, length: nsString.length))
+        
+        return matches.compactMap { match -> String? in
+            guard match.numberOfRanges > 1,
+                  let urlRange = Range(match.range(at: 1), in: dependenciesSection) else {
+                return nil
+            }
+            
+            let urlString = String(dependenciesSection[urlRange])
+            
+            // Extract the repository name from the URL
+            let components = urlString.split(separator: "/")
+            guard components.count >= 2 else { return nil }
+            
+            var repoName = String(components.last!)
+            // Remove .git suffix if present
+            if repoName.hasSuffix(".git") {
+                repoName = String(repoName.dropLast(4))
+            }
+            
+            return repoName
+        }
+    }
 }
 
 extension SwiftPackage {
